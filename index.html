@@ -1,166 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AnimeFlyX</title>
+
+<style>
+body{
+margin:0;
+font-family:Arial;
+background:#0b0b10;
+color:#fff;
+scroll-behavior:smooth;
+}
+
+section{padding:60px 20px}
+.center{text-align:center}
+
+/* LANDING */
+#landing{
+height:100vh;
+display:flex;
+flex-direction:column;
+justify-content:center;
+align-items:center;
+gap:20px;
+}
+
+input{
+width:80%;
+max-width:500px;
+padding:15px;
+border:none;
+border-radius:10px;
+font-size:16px;
+}
+
+/* HOT */
+.hot-wrap{
+margin-top:10px;
+display:flex;
+flex-wrap:wrap;
+justify-content:center;
+gap:10px;
+}
+
+.hot{
+background:#1b1b22;
+padding:6px 12px;
+border-radius:8px;
+cursor:pointer;
+}
+
+/* ROWS */
+.row{
+display:flex;
+overflow-x:auto;
+gap:10px;
+padding:10px 0;
+}
+
+.card{
+min-width:140px;
+background:#16161d;
+border-radius:10px;
+overflow:hidden;
+cursor:pointer;
+flex-shrink:0;
+}
+
+.card img{
+width:100%;
+height:180px;
+object-fit:cover;
+}
+
+.card div{
+padding:8px;
+font-size:13px;
+}
+
+/* SECTIONS */
+.hidden{display:none}
+
+.section-title{
+font-size:22px;
+margin-bottom:10px;
+}
+
+/* WATCH */
+#watch{
+display:flex;
+gap:20px;
+flex-wrap:wrap;
+}
+
+#player{
+width:70%;
+height:420px;
+border:none;
+}
+
+#episodes{
+width:25%;
+max-height:420px;
+overflow:auto;
+}
+
+.ep{
+padding:10px;
+background:#1b1b22;
+margin-bottom:5px;
+cursor:pointer;
+}
+
+/* CONTINUE WATCHING */
+.dim{opacity:0.6;font-size:13px}
+</style>
+</head>
+
+<body>
+
+<!-- LANDING -->
+<div id="landing">
+<h1>AnimeFlyX</h1>
+
+<input id="search" placeholder="Search anime...">
+
+<div class="hot-wrap" id="hot"></div>
+</div>
+
+<!-- CONTINUE WATCHING -->
+<section id="cwSec">
+<h2 class="section-title">Continue Watching</h2>
+<div class="row" id="cw"></div>
+</section>
+
+<!-- WHY -->
+<section>
+<h2 class="section-title">Why Choose Us</h2>
+<p>Free anime streaming. No ads. Fast loading. Simple UI.</p>
+</section>
+
+<!-- DISCORD -->
+<section>
+<h2 class="section-title">Discord</h2>
+<a href="https://discord.gg/aFjbJ6HSN6" target="_blank">Join Server</a>
+</section>
+
+<!-- BROWSE -->
+<section id="browse" class="hidden">
+<h2 class="section-title">Results</h2>
+<div class="row" id="grid"></div>
+</section>
+
+<!-- WATCH -->
+<section id="watch" class="hidden">
+<h2 id="title"></h2>
+
+<div id="watch">
+<iframe id="player"></iframe>
+
+<div id="episodes"></div>
+</div>
+</section>
+
 <script>
-'use strict';
-
-/* ───────── BASIC UTILS ───────── */
 const $ = id => document.getElementById(id);
-const esc = s => (s ?? '').replace(/[&<>"]/g, m =>
-  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m])
-);
 
-/* ───────── STATE ───────── */
-const STATE = {
-  view: 'landing', // landing | browse | watch
-  anime: null,
-  ep: 1,
-  type: 'sub'
+let STATE = {anime:null,ep:1};
+
+const HOT = ["One Piece","Naruto","Jujutsu Kaisen","Bleach"];
+
+function renderHot(){
+$('hot').innerHTML = HOT.map(q =>
+`<div class="hot" onclick="search('${q}')">${q}</div>`
+).join('');
+}
+
+/* JIKAN */
+async function fetchAnime(q){
+const r = await fetch(`https://api.jikan.moe/v4/anime?q=${q}&limit=20`);
+const j = await r.json();
+return j.data;
+}
+
+/* SEARCH */
+async function search(q){
+const data = await fetchAnime(q);
+
+$('browse').classList.remove('hidden');
+
+$('grid').innerHTML = data.map(a=>`
+<div class="card" onclick='openAnime(${a.mal_id},"${a.title}",${a.episodes||12})'>
+<img src="${a.images.jpg.image_url}">
+<div>${a.title}</div>
+</div>
+`).join('');
+}
+
+/* PLAYER */
+function openAnime(id,title,eps){
+STATE = {anime:{id,title,eps},ep:1};
+
+$('title').textContent = title;
+$('player').src = `https://vidlink.pro/anime/${id}/1/sub`;
+
+buildEpisodes(eps);
+
+show('watch');
+saveCW(id,title,1);
+}
+
+function buildEpisodes(n){
+const el = $('episodes');
+el.innerHTML='';
+for(let i=1;i<=n;i++){
+const d=document.createElement('div');
+d.className='ep';
+d.textContent='Episode '+i;
+d.onclick=()=>{
+STATE.ep=i;
+$('player').src=`https://vidlink.pro/anime/${STATE.anime.id}/${i}/sub`;
+saveCW(STATE.anime.id,STATE.anime.title,i);
 };
-
-/* ───────── JIKAN API ───────── */
-async function jikanSearch(q) {
-  const r = await fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(q)}&limit=20&sfw=true`);
-  const j = await r.json();
-
-  return (j.data || []).map(a => ({
-    id: a.mal_id,
-    malId: a.mal_id,
-    title: a.title,
-    eps: a.episodes || 12,
-    syn: a.synopsis || '',
-    score: a.score,
-    img: a.images?.jpg?.large_image_url,
-    genres: (a.genres || []).map(g => g.name)
-  }));
+el.appendChild(d);
+}
 }
 
-/* ───────── HOT SEARCHES ───────── */
-const HOT = ["One Piece","Jujutsu Kaisen","Attack on Titan","Demon Slayer"];
+/* CONTINUE WATCHING */
+const KEY='cw';
 
-function renderHot() {
-  const wrap = $('hot-searches');
-  wrap.innerHTML = HOT.map(q =>
-    `<span class="hot" onclick="doSearch('${q}')">${q}</span>`
-  ).join('');
+function saveCW(id,title,ep){
+let cw=JSON.parse(localStorage.getItem(KEY)||"[]");
+cw=cw.filter(x=>x.id!==id);
+cw.unshift({id,title,ep});
+localStorage.setItem(KEY,JSON.stringify(cw));
+renderCW();
 }
 
-/* ───────── CONTINUE WATCHING ───────── */
-const CW_KEY = 'cw_v1';
-let CW = [];
+function renderCW(){
+let cw=JSON.parse(localStorage.getItem(KEY)||"[]");
 
-function cwLoad() {
-  try { CW = JSON.parse(localStorage.getItem(CW_KEY)) || []; }
-  catch { CW = []; }
+$('cw').innerHTML = cw.length
+? cw.map(a=>`
+<div class="card" onclick="openAnime(${a.id},'${a.title}',12)">
+<div>${a.title}</div>
+<small>Ep ${a.ep}</small>
+</div>
+`).join('')
+: `<p class="dim">Start watching to see progress here</p>`;
 }
 
-function cwSave() {
-  localStorage.setItem(CW_KEY, JSON.stringify(CW));
+/* VIEW */
+function show(id){
+$(id).classList.remove('hidden');
 }
 
-function cwPush(anime, ep) {
-  CW = CW.filter(x => x.id !== anime.id);
-  CW.unshift({ ...anime, ep });
-  if (CW.length > 12) CW.pop();
-  cwSave();
-  renderCW();
+/* SCROLL reveal */
+window.addEventListener('scroll',()=>{
+if(window.scrollY>200){
+$('cwSec').style.display='block';
 }
-
-function renderCW() {
-  const row = $('cw-row');
-  if (!row) return;
-
-  if (!CW.length) {
-    row.innerHTML = `<p class="dim">Start watching — it appears here.</p>`;
-    return;
-  }
-
-  row.innerHTML = CW.map(a => `
-    <div class="card" onclick="openPlayer(${a.id})">
-      <img src="${a.img}">
-      <div>${esc(a.title)}</div>
-      <small>Ep ${a.ep}</small>
-    </div>
-  `).join('');
-}
-
-/* ───────── SEARCH ───────── */
-async function doSearch(q) {
-  if (!q) return;
-
-  $('search-grid').innerHTML = 'Loading...';
-  showView('browse');
-
-  const res = await jikanSearch(q);
-
-  $('search-grid').innerHTML = res.map(a => `
-    <div class="card" onclick='openPlayerObj(${JSON.stringify(a)})'>
-      <img src="${a.img}">
-      <div>${esc(a.title)}</div>
-    </div>
-  `).join('');
-}
-
-/* ───────── PLAYER ───────── */
-function playerUrl(id, ep) {
-  return `https://vidlink.pro/anime/${id}/${ep}/sub`;
-}
-
-function openPlayerObj(anime) {
-  STATE.anime = anime;
-  STATE.ep = 1;
-
-  $('watch-title').textContent = anime.title;
-  $('player').src = playerUrl(anime.id, 1);
-
-  buildEpisodes(anime.eps);
-
-  showView('watch');
-  cwPush(anime, 1);
-}
-
-function buildEpisodes(n) {
-  const list = $('ep-list');
-  list.innerHTML = '';
-
-  for (let i=1;i<=n;i++) {
-    const el = document.createElement('div');
-    el.className = 'ep';
-    el.textContent = i;
-
-    el.onclick = () => {
-      STATE.ep = i;
-      $('player').src = playerUrl(STATE.anime.id, i);
-      cwPush(STATE.anime, i);
-    };
-
-    list.appendChild(el);
-  }
-}
-
-/* ───────── VIEW SYSTEM ───────── */
-function showView(v) {
-  STATE.view = v;
-
-  ['landing','browse','watch'].forEach(id => {
-    $(`view-${id}`).style.display = (id === v ? 'block' : 'none');
-  });
-}
-
-/* ───────── SCROLL BEHAVIOR ───────── */
-window.addEventListener('scroll', () => {
-  if (STATE.view !== 'landing') return;
-
-  const y = window.scrollY;
-
-  if (y > 200) {
-    $('cw-section').style.display = 'block';
-  }
 });
 
-/* ───────── INIT ───────── */
-function init() {
-  cwLoad();
-  renderCW();
-  renderHot();
-}
+/* INIT */
+renderHot();
+renderCW();
 
-init();
+/* ENTER SEARCH */
+$('search').addEventListener('keydown',e=>{
+if(e.key==='Enter') search(e.target.value);
+});
 </script>
+
+</body>
+</html>
